@@ -72,21 +72,16 @@ runner. After the final checks, reconcile actual outputs (including root logs
 such as `app.log`) and list the exact cleanup commands before sealing the delivery
 packet. Include any known outputs from checks scheduled after delivery.
 
-Ownership and permission are separate: a verified task-owned root log outside the
-paths below still needs shell approval. Resolve it before delivery: use a command
-already allowed for that exact path, or record the user's explicit retention.
-If an unneeded output can be safely removed without affecting verification or
-delivery evidence, it may be removed before delivery with the ordinary approval.
-Otherwise, if a required removal has no known grant and retention is not approved,
-report the exact command/path as blocked before transferring the commit. Do not
-test permissions by running a deletion on evidence or assume that a future
-interactive prompt will be answered in a non-interactive run.
+Ownership and permission are separate. If configured permissions require approval,
+account for it before delivery. An unneeded output may be removed before delivery
+if doing so preserves verification and recovery evidence. If a required removal
+cannot be authorized and the user has not requested retention, report the exact
+command/path as blocked before transferring the commit. Do not test permissions
+by deleting evidence or assume a prompt will be answered in a non-interactive run.
 
-## Automatic task cleanup and target checks
+## Task cleanup and target checks
 
-The native policy asks before deletion by default. Developer/Sprinter have short
-text-based exceptions for standard `rm -f -- <relative-path>` and
-`rm -rf -- <relative-path>` recipes under:
+Typical cleanup candidates for Developer/Sprinter include:
 
 - `tmp/<unit-id>/` and its children;
 - reproducible `build/` and `dist/`, including the directories themselves, trailing
@@ -97,30 +92,17 @@ text-based exceptions for standard `rm -f -- <relative-path>` and
 - `artifacts/<unit-id>/`, or unit children of `artifacts/git-delivery/`,
   `artifacts/evidence/` and `artifacts/phase-planning/`.
 
-Use one concrete project-relative operand, a separate `--`, and canonical project
-cwd. Prefer these recipes instead of adding more permission spellings; even an
-empty task directory can be removed with `rm -rf -- <relative-path>`. Quoted paths,
-omitted `--`, `rmdir`, `unlink` and other unmatched forms still ask. Absolute
-deletion operands still ask, including absolute nested build paths.
-The project root, `.git`, `.opencode` and shared temporary/evidence roots do not
-receive automatic grants. Nested build patterns also match arbitrary prefixes;
-later ask rules retain the ordinary absolute and `.git/`/`.opencode/` spellings.
+Prefer `rm -f -- <relative-path>` for a file and `rm -rf -- <relative-path>` for a
+directory. Use one concrete project-relative operand, quote it as needed, and
+use the canonical project cwd. The harness adds no shell command rules or cleanup
+grants. There is no ownership registry or cleanup hook; the parent checks targets.
 
-There is **no ownership registry, cleanup hook or preflight tool**. Permissions
-match command text, not real paths or shell operands. They do not verify cwd,
-symlinks, mounts, tracked status, `..`, multiple operands or ownership. Wildcards
-can match spaces and extra arguments; a path matching the text is not proof that
-the operation is safe. These deliberately weaker checks rely on the agent to
-follow the rules below, not on a runtime validator. Explicit configured denials
-remain final, but protection of shared roots is not guaranteed for every alias.
+Do not ask a separate workflow question for verified leaves or reproducible build
+outputs. A directory's name or ignored status alone is not proof of reproducibility.
+Stop and clarify if contents, consumers or retention are uncertain. Honor configured
+permissions. A workflow question answer does not change a native permission rule.
 
-Do not ask a separate cleanup question for verified leaves or reproducible build
-outputs covered by the recipes above. A directory's build name or ignored status
-alone is not proof of reproducibility. Stop and clarify if contents, consumers or
-retention are uncertain. Unmatched paths, including root logs, and external paths
-retain normal approval. A question answer does not change a native permission rule.
-
-Before every automatic or approval-required deletion:
+Before every deletion:
 
 1. Resolve the originating cwd and absolute target. Inspect the target and parents
    for symlinks, unexpected mounts or other aliases; do not follow them into data
@@ -132,10 +114,8 @@ Before every automatic or approval-required deletion:
    `/tmp`, `/tmp/opencode`, user-retained materials and external checkouts.
    Select one owned leaf/file or verified build-output directory, never a wildcard
    operand or a parent containing unrelated work.
-4. For a verified target covered by the native recipes, proceed without a separate
-   question. For another task-owned target, follow its pre-delivery disposition
-   and honor native approval. When asking before delivery for a verified output
-   no longer needed as evidence, show the exact operand and use `Allow once`.
+4. Follow the target's pre-delivery disposition. If the tool requests permission,
+   show the exact operand and prefer `Allow once`.
    Native-write and shell-deletion approval are separate from directory reading;
    neither replaces the ownership checks above.
 5. Execute one foreground deletion, inspect its exit status and verify target
@@ -150,7 +130,7 @@ Build-output roots may be removed in full. Keep empty `tmp`, `artifacts` and
 shared service/evidence roots; never run `rmdir artifacts` or `rmdir --parents`.
 These are workflow requirements, not
 runtime path checks or an OS sandbox. Do not use another spelling, a script or a
-different cwd to evade a prompt. Explicit denial always remains final.
+different cwd to evade a prompt or denial.
 
 ## Closeout
 

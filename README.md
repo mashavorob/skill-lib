@@ -6,9 +6,11 @@ projects, plus two on-demand Python skills.
 
 ## Install
 
-Requires Python 3.9+ and OpenCode. From this repository:
+Requires Python 3.9+, PyYAML and OpenCode. From this repository, install the
+Python dependency in your environment, then run the installer:
 
 ```sh
+python3 -m pip install -r requirements.txt
 python3 install.py --target ~/src/myproject --dry-run
 python3 install.py --target ~/src/myproject
 ```
@@ -26,10 +28,21 @@ python3 install.py --target ~/src/myproject
 | `package.json` | Local plugin dependency, merged with any existing `.opencode/package.json` |
 
 OpenCode 1.19.6 discovers both `.opencode/agent/` and `.opencode/agents/`.
-The installer uses **`agents/`** and refuses a same-name file in `agent/` to
-avoid duplicate IDs. The project's `AGENTS.md` remains the source of build,
-verification and QA instructions. The installer does not touch user-level config,
-the project's `opencode.json(c)`, or its root `package.json`.
+The installer uses **`agents/`** and checks both directories and top-level
+`mode/` and `modes/` files for conflicting IDs, including names declared in
+Markdown frontmatter. It also checks `opencode.json` and `opencode.jsonc` in the
+project root and `.opencode/`. Non-overlapping settings such as `variant` and
+per-agent `permission.bash` are allowed. The installer rejects explicit conflicts
+with shipped permission values after merging project files in load order and
+converting legacy `tools` toggles. It checks matching patterns and later catch-all
+rules within each tool; for other wildcard interactions, inspect the effective
+rules with `opencode debug agent <name>`. Permission conflicts, overrides of
+shipped fields (such as `model` or `prompt`), disabling a required agent, or
+reusing a harness ID in a legacy `mode` entry stop installation even with `--force`.
+The project's `AGENTS.md`
+remains the source of build, verification and QA instructions. The installer does
+not touch user-level config, the project's `opencode.json(c)`, or its root
+`package.json`.
 
 **Fully quit and restart OpenCode from the target project root**, then select
 `developer` for one approved task or `sprinter` for a phase-based plan. OpenCode
@@ -44,8 +57,10 @@ opencode debug skill
 
 ### Model aliases
 
-The agents use these aliases from your OpenCode configuration. The harness sets
-no variant; configure reasoning on the aliases themselves.
+The agents use these aliases from your OpenCode configuration. For Sprinter,
+configure reasoning on the `opencode/worker` alias itself: in OpenCode 1.19.6
+the phase compaction API does not carry a selected variant into the automatic
+continuation, which uses the alias defaults.
 
 | Agents | Model alias |
 | --- | --- |
@@ -55,8 +70,12 @@ no variant; configure reasoning on the aliases themselves.
 | `coder` | `openai/coder` |
 | `sprint-planner` | `openai/planner` |
 
-Plan and Build keep their prompts and existing shell permissions. The runtime
-plugin prevents them from invoking harness roles or the phase checkpoint tool.
+Plan and Build keep their prompts and permissions. Developer and Sprinter use
+their workflow instructions to choose workers and follow OpenCode's native
+delegation permissions. The phase checkpoint tool is specific to Sprinter.
+Harness roles inherit Bash permissions from OpenCode and your configuration.
+The harness does not add shell command restrictions or exceptions for cleanup.
+Check the effective rules with `opencode debug agent <name>`.
 
 ### Updating
 
@@ -68,8 +87,11 @@ python3 install.py --target ~/src/myproject --dry-run --force
 python3 install.py --target ~/src/myproject --force
 ```
 
-Replacements are backed up under `.opencode/.skill-lib-backups/`. Existing
-`PROJECT.md`, unrelated files and existing plugin dependency versions are kept.
+Replacements are backed up under `.opencode/.skill-lib-backups/`. If a project
+has moved, the installer reports mismatched locations in `PROJECT.md` and stops.
+Use `--force` to back up the profile and update only its two location entries.
+Other profile settings, unrelated files and existing plugin dependency versions
+are kept.
 The installer never prunes old components. If this target project contains a
 previous `py-*`/`cpp-*` installation, remove only its obsolete files and plugin
 after confirming ownership. Restart OpenCode after updating.
@@ -81,21 +103,26 @@ project's `.opencode/`. The runtime plugin replaces those files.
 ## Workflow
 
 Developer starts with development correctness and independent final general
-review, adding specialist focuses when the change warrants them. Sprinter runs
-the five focuses in each code-review tier and uses a bounded phase-brief review
+review, adding enabled specialist focuses when the change warrants them. Sprinter
+runs the enabled focuses from `PROJECT.md` in each code-review tier (all five by
+default) and uses a bounded phase-brief review
 before coding: at most two review rounds and three brief versions. Both share a
 32-attempt coding budget per task or phase, run project-defined checks, and hand
-accepted changes to `git-delivery` for local delivery. That workflow uses Git
-and needs a JSON validator (`jq` is recommended).
+accepted changes to `git-delivery` for local delivery. That workflow uses Git,
+needs a JSON validator (`jq` is recommended) and the GNU coreutils tools
+`sha256sum` and `realpath`; macOS without coreutils is not a supported delivery
+host.
+An accepted task or phase whose final tree matches its base closes as
+`NO_CHANGES`, with the original branch checked out and no delivery commit.
 
-Prefer putting verification logs in `tmp/<unit>/<attempt>/`. Check logs outside
-the [automatic cleanup paths](workflows/artifact-cleanup.md) before transferring
-the commit; a task-owned log at the project root still requires shell permission.
+Prefer putting verification logs in `tmp/<unit>/<attempt>/`. Before transferring
+the commit, [account for all cleanup targets](workflows/artifact-cleanup.md),
+including logs written at the project root, and honor configured permissions.
 
 The [shared rules](workflows/agent-rules.md) select Python skills by the affected
 component and memory risks. C++ guidance lives in those rules and the shared
-review profiles. Native permissions help enforce delegation and read-only edit
-roles; command-pattern checks are not an OS sandbox.
+review profiles. Role instructions and native permissions guide the workflow.
+Use OS-level isolation when you need to restrict access to files or processes.
 
 Sprinter uses the [native phase checkpoint](workflows/sprinter-compaction.md).
 OpenCode automatically continues after compaction; Sprinter checks the native

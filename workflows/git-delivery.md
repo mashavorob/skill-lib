@@ -3,10 +3,17 @@
 Only `git-delivery` performs final delivery. Developer/Sprinter owns initial
 iteration branches and checkpoint commits under
 `.opencode/workflows/iteration-git.md`, then calls a fresh `git-delivery` subagent
-after both review tiers and all required verification/QA have cleared. Verify
-the launched agent/model identity (`git-delivery`, `opencode/worker`) before
+after both review tiers and all required pre-delivery checks and QA have cleared.
+Verify the launched agent/model identity (`git-delivery`, `opencode/worker`) before
 accepting its output. Missing agent/identity or a blocked result is `BLOCKED`;
 there is no direct-delivery fallback in the orchestrator.
+
+## Verification timing
+
+Complete all checks that can verify the accepted checkpoint before delivery. Defer
+only checks whose documented acceptance criteria require the target revision
+after delivery, such as verifying a build that embeds the delivered commit SHA.
+Missing prerequisites or failing checks on FINAL are not reasons to defer them.
 
 ## Ownership and handoff
 
@@ -19,7 +26,7 @@ profile configuration and must never enter a product checkpoint.
 Developer/Sprinter maintains `handoff.json` and `evidence/` incrementally as the
 unit runs, including the unit ledger and original review/verification results.
 Do not assemble the packet by reconstructing a long conversation at closeout.
-The handoff stays `DRAFT` until acceptance is complete, then becomes `READY`
+The handoff stays `DRAFT` until the pre-delivery gates clear, then becomes `READY`
 and is frozen for the whole delivery attempt. Record its SHA-256 digest after
 sealing; the worker verifies that digest and the referenced immutable report
 receipts before Git mutation. Seal immutable acceptance snapshots, not mutable
@@ -32,13 +39,19 @@ set. Sealed reports remain unchanged until unit closeout. The packet contains:
   FINAL SHA/tree, the reserved squash ref and checkpoint manifest;
 - approved scope, included paths, excluded user/untracked inputs with baseline
   evidence, and command working directories;
-- current acceptance coverage at both review tiers, original report/evidence
+- effective implementation profile set, selected profiles and current acceptance
+  coverage at both review tiers, original report/evidence
   paths/digests and verified identities, findings/dispositions and corrective-delta
   coverage through FINAL; a generic `PASS` claim is insufficient;
-- required checks/QA and their actual results/snapshots, explicit reasons for
-  non-required checks, planning acceptance when applicable, and unchanged inputs;
+- required pre-delivery checks/QA and their actual results/snapshots, explicit
+  reasons for non-required checks, planning acceptance when applicable, and
+  unchanged inputs;
+- required post-delivery checks, listed separately as pending: for each, record
+  why the target revision is required, the documented command/scenario, working
+  directory, prerequisites, expected result and planned evidence location;
 - approved commit subject/summary, project commit conventions and the reserved
-  receipt/message paths.
+  receipt/message paths. For a net no-op, record why the approved requirements
+  are already satisfied and omit the commit subject and message path.
 
 Keep old-SHA results as old-SHA evidence with the recorded revalidation chain;
 never relabel them as FINAL results. Acceptance must cover the exact FINAL tree.
@@ -46,9 +59,10 @@ Each referenced file must exist and be readable. Missing or contradictory
 authorization, coverage, evidence or snapshots blocks delivery before Git mutation.
 
 The parent supplies only the sealed packet path/digest, evidence references and
-explicit `deliver` or `resume` action to a fresh worker. Resume uses the same
-unchanged packet and names the existing delivery session/receipt. Omit `sessionID`
-to start the fresh worker and omit model overrides to use its configured pin.
+explicit `deliver` or `resume` action. For the first `deliver` call, omit
+`task_id` to start a fresh worker. For `resume`, pass the original worker's saved
+`task_id` in the `task` call and reference the same unchanged packet and receipt.
+Omit model overrides to use the worker's configured model.
 Use a foreground delegation so the parent waits. While it runs,
 do not alter that packet, run
 coding/review/tests/QA or mutate the unit's Git state. Only one delivery executor
@@ -59,13 +73,21 @@ with fresh refs. Delivery does not consume/reset planning or coding iterations.
 ## Preflight
 
 Read the profile, applicable `AGENTS.md`, handoff and referenced evidence. Check
-required coverage against `.opencode/workflows/focused-review.md` and configured
-profiles, and verification/QA obligations against the approved task and project
-instructions; do not re-review code. Verify root/ref names and full SHAs against
+required coverage using the same `Profile selection` rules in
+`.opencode/workflows/focused-review.md`: resolve the effective set from `PROJECT.md`
+and check it against the sealed set, tier selections and acceptance evidence.
+Block on disagreement or missing required coverage. Check verification/QA
+obligations against the approved task and project instructions: require passing
+evidence for each pre-delivery check and a justified plan for each required
+post-delivery check. Pending post-delivery checks do not block transfer when
+their prerequisites other than the target revision are in place. Do not run
+these checks or re-review code. Verify root/ref names and full SHAs against
 Git, without path/config/environment overrides. The packet root, profile's
 canonical root and Git's actual toplevel must agree. Resolve artifact paths
 canonically with `realpath -- <path>` and verify packet/report digests with
-`sha256sum -- <file>`. Record a blocked receipt only after the unit/root and owned
+`sha256sum -- <file>`. These tools come from GNU coreutils and must exist on the
+delivery host; a missing one is a blocked prerequisite reported before delegation
+or any Git mutation. Record a blocked receipt only after the unit/root and owned
 artifact location are validated; otherwise return an inline blocker without
 writing guessed paths. Require:
 
@@ -83,10 +105,27 @@ writing guessed paths. Require:
 - for a fresh delivery, current branch is the recorded iteration branch at FINAL,
   the squash ref is unused and the original target still equals BASE.
 
-A net no-op, moved target or stale acceptance is `BLOCKED`. Do not repair these
+A moved target or stale acceptance is `BLOCKED`. Do not repair these
 conditions, create new acceptance, select another target or invent replacement
 refs. For a resume, inspect the recovery cases below before any command that
 changes Git.
+
+## No-change delivery
+
+If `FINAL^{tree} == BASE^{tree}`, use `NO_CHANGES` only after the same acceptance
+and safety preflight. Equal trees alone do not prove the task is complete;
+require evidence that the approved requirements are already satisfied. If not,
+return `BLOCKED` and preserve the iteration state. Do not use the squash path
+for equal trees.
+
+Record `PREPARED` and the pending switch intent in the validated receipt. Use
+only the original-target switch from step 4 below. After the switch verify the
+current branch is the original target, HEAD and target ref are still at BASE,
+the iteration ref is still at FINAL, the trees still match, the squash ref does
+not exist, and the index/worktree, excluded files and Git sequence state are
+unchanged as required by preflight. Record `NO_CHANGES`, the unchanged target
+HEAD (BASE), and the verified BASE/FINAL/tree mapping. Do not write a commit
+message, create a squash ref or record SQUASH/RESULT commits.
 
 ## Receipt and execution
 
@@ -191,9 +230,16 @@ Receipt stages describe verified observations, not proof that an outstanding
 mutation did not run. Before resuming compare the frozen packet, receipt and
 actual refs/trees/parents/trailers/index/sequence state:
 
-- No helper ref, original iteration still at FINAL, target at BASE and clean
-  tracked/index/sequence state: repeat full preflight and record PREPARED, or
-  reconcile the existing pending helper creation, before the missing first step.
+- For equal BASE/FINAL trees, reconcile only the no-change path. With all
+  preconditions intact and the iteration branch still checked out, record or
+  reconcile the switch intent and perform the switch. If the original target
+  is already checked out at BASE and the receipt records the pending no-change
+  switch or `NO_CHANGES`, reverify the no-change postconditions and return
+  `NO_CHANGES` without another mutation. Any other state is `BLOCKED`.
+- For different BASE/FINAL trees, with no squash ref, original iteration still
+  at FINAL, target at BASE and clean tracked/index/sequence state: repeat full
+  preflight and record PREPARED, or reconcile the existing pending helper
+  creation, before the missing first step.
 - Helper at BASE: a clean BASE index means merge has not taken effect; an index
   exactly equal to FINAL means squash staging already completed. Reconcile the
   pending action and resume only the missing step. Other index/worktree state
@@ -220,14 +266,24 @@ Do not silently adopt an unrelated helper ref or claim success from receipt text
 ## Parent closeout
 
 Developer/Sprinter verifies the returned agent/model identity, unit/receipt
-binding, actual RESULT target ref, parent/tree/trailer mapping and command
-outcomes through read-only Git queries. A partial or blocked receipt cannot
-authorize another delivery attempt, cleanup or phase advance on its own.
-Keep all handoff/evidence/message/receipt files until full successful closeout;
-then remove them with other unit artifacts under the ordinary cleanup workflow.
-Keep only the self-contained result mapping/outcome for the next phase.
+binding and command outcomes through read-only Git queries. For `DELIVERED`,
+verify the actual RESULT target ref and parent/tree/trailer mapping. For
+`NO_CHANGES`, verify the unchanged target checked out at BASE, the BASE/FINAL
+tree equality, absence of a squash ref and the clean index/worktree and sequence
+state. A partial or blocked receipt cannot authorize another delivery attempt,
+cleanup or phase advance on its own.
 
-Do not relabel old test results as RESULT tests. Any required checks that depend
-on revision identity/generated Git metadata stay with the orchestrator. Content
-changes need review revalidation. Only after verification and artifact cleanup
-may it report completion or start the next phase/code-intelligence refresh.
+Run the pending post-delivery checks on the verified target revision: RESULT for
+`DELIVERED`, BASE for `NO_CHANGES`. Record the actual SHA, outcomes and evidence
+in the parent's ledger without changing the sealed handoff or delivery receipt.
+Do not relabel earlier test results as checks of the target revision. Content
+changes need review revalidation.
+
+If a required post-delivery check fails or cannot run, report the verified Git
+outcome and target SHA separately from the blocked closeout. Preserve evidence
+and stop before cleanup or phase advance. Do not retry delivery or roll back
+the target automatically. Only after all required checks pass and artifact
+cleanup is verified may the parent report completion or start the next phase or
+code-intelligence refresh. Keep the sealed handoff and delivery records until
+successful closeout, then remove them under the artifact cleanup workflow.
+Carry only the self-contained result into the next phase.

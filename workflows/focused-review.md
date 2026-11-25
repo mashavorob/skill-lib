@@ -27,7 +27,18 @@ on the resulting checkpoint.
 ## Profile selection
 
 The five profiles are `correctness`, `general`, `architecture`,
-`latency-concurrency` and `simplification`. Default Developer implementation routing is:
+`latency-concurrency` and `simplification`.
+
+For implementation, resolve the eligible set once from `.opencode/PROJECT.md`:
+start with `Enabled profiles` (all five if omitted), then subtract `Disabled profiles`
+(`none` if omitted). A disabled profile is excluded even if also listed as enabled.
+Unknown IDs or a resulting set missing `correctness` or `general` are `BLOCKED`:
+both whole-change profiles are required by the implementation review gates.
+Record the effective set and tier selections in the unit ledger. On resume or
+delivery, reconcile any policy change against the recorded set and evidence;
+do not silently omit required coverage or relabel past reports.
+
+Developer implementation routing is:
 
 | Tier | Required whole-change profile | Risk-selected specialists |
 | --- | --- | --- |
@@ -35,7 +46,7 @@ The five profiles are `correctness`, `general`, `architecture`,
 | Final | `general` | `architecture`, `latency-concurrency`, `simplification` |
 
 For Developer, do not automatically run both whole-change profiles in each tier or
-every specialist in both tiers. Select specialists independently per tier when the
+every specialist in both tiers. Select eligible specialists independently per tier when the
 actual diff has concrete risks: ownership/interfaces/dependencies/orchestration
 for architecture; reachable runtime costs, memory growth/retention, unbounded
 collections/queues/tasks, blocking, races or lifecycle for
@@ -44,7 +55,8 @@ for simplification. Record the selected set and concise scope-based reasons for
 selecting or omitting specialists in the ledger. Omission needs no reviewer call
 or placeholder `NOT_APPLICABLE` report. Final general still covers the whole change,
 including correctness and interactions, independently of development conclusions.
-Explicitly requested additional retained profiles must be included.
+Include explicitly requested additional eligible profiles. If an implementation
+request requires a disabled profile, resolve the conflict before review.
 
 Apply the shared `Language skills` rules for both tiers and review-only work.
 For Python, `latency-concurrency` prioritizes memory/resource efficiency while
@@ -54,14 +66,14 @@ required/existing evidence to each reviewer. Each session loads its own skills.
 Keep the same five profile IDs, routing, report prefixes and concurrency limits;
 there is no extra memory profile. Non-Python/C++ review emphasis is unchanged.
 
-Sprinter implementation discovery selects all five profiles in each tier,
-including both correctness and general. Launch all five concurrently against one
+Sprinter implementation discovery selects the entire eligible set in each tier,
+including both correctness and general. Launch the selected set concurrently against one
 frozen checkpoint per tier; do not omit specialists using Developer's risk-based
 selection or skip calls based on an upfront applicability decision. Each specialist
 may return `NOT_APPLICABLE` with a scope-based reason, but correctness and general
-must both complete with actual whole-change coverage. Collect all five reports
+must both complete with actual whole-change coverage. Collect every selected report
 before reconciliation or coding. Complete development and its accepted corrections
-before launching the five independent final reviewers on the resulting checkpoint.
+before launching the independent final reviewers on the resulting checkpoint.
 This also applies to any required full rediscovery. Targeted corrections still
 verify only affected focuses under Corrections; do not rerun unchanged coverage.
 Review-only requests retain their explicit subset regardless of orchestrator.
@@ -97,7 +109,8 @@ Review collections, targeted verification, full rediscovery, tests/checkpoints
 and QA belong to the current iteration and do not increment the counter. There
 is no separate review-pass or per-tier budget. Repeat full discovery only when
 changed code or a coverage gap requires it; do not repeat valid unchanged checks.
-Unit acceptance still requires both review tiers and all required verification.
+Unit completion still requires both review tiers and all required verification,
+including any checks on the target revision after delivery.
 
 Preserve the counter across compaction, pause, resume, coder/session changes,
 checkpoints and renamed findings. On explicit resume of older work, reconstruct
@@ -120,7 +133,8 @@ reaching the limit is not a goal. The planning budget remains independent.
     `BASE..CHECKPOINT` commit/tree SHAs. Include new/ignored inputs explicitly;
     a clean worktree is not an empty accumulated diff.
 2. Select profiles under Profile selection: Developer uses the tier's required
-   whole-change profile and concrete-risk specialists; Sprinter selects all five.
+   whole-change profile and eligible concrete-risk specialists; Sprinter selects
+   every eligible profile.
    Full review always means full accumulated-diff coverage, not just the latest
    corrective delta.
 3. Launch the entire selected set concurrently against that same frozen snapshot.
@@ -150,7 +164,7 @@ After the correction, run affected tests, create its checkpoint and use fresh
 reviewer sessions for the affected focuses at the same tier. Launch all affected
 focuses concurrently, with no correctness-first gate, and collect every selected
 report before further coding. Behavioral corrections need the tier's whole-change
-reviewer to verify the delta; add specialist checks for affected concrete risks,
+reviewer to verify the delta; add eligible specialist checks for affected concrete risks,
 not an automatic rerun of unaffected profiles. Development corrections use
 `opencode/reviewer`; final-tier corrections use `openai/reviewer`, including for
 targeted correction verification.
@@ -194,6 +208,7 @@ reopens completed work or resets the coding counter.
 ## Review-only requests
 
 A standalone review needs scope and requirements, not an implementation plan.
+Implementation profile settings do not change the requested review-only collection.
 Run only the requested collection; do not enter correction loops, edit, plan,
 build, run tests/QA, commit or clean artifacts. Do not start or increment
 `coding_iteration` for review-only work.

@@ -3,40 +3,6 @@ description: "Execute one approved task through coder, focused reviews and verif
 mode: primary
 model: opencode/worker
 permission:
-  bash:
-    "*": allow
-    "sudo *": deny
-    "rm *": ask
-    "rmdir *": ask
-    "unlink *": ask
-    "git *reset *": ask
-    "git *clean *": ask
-    "git *restore *": ask
-    "git *checkout *": ask
-    "git *rebase *": ask
-    "git *push *": ask
-    "git *commit *--amend*": ask
-    "rm -* -- tmp/?*": allow
-    "rm -* -- build": allow
-    "rm -* -- build/*": allow
-    "rm -* -- dist": allow
-    "rm -* -- dist/*": allow
-    "rm -* -- ?*/build": allow
-    "rm -* -- ?*/build/*": allow
-    "rm -* -- artifacts/?*": allow
-    "rm -* -- artifacts/git-delivery": ask
-    "rm -* -- artifacts/git-delivery/": ask
-    "rm -* -- artifacts/evidence": ask
-    "rm -* -- artifacts/evidence/": ask
-    "rm -* -- artifacts/phase-planning": ask
-    "rm -* -- artifacts/phase-planning/": ask
-    "rm -* -- /*": ask
-    "rm -* -- .git/*": ask
-    "rm -* -- .opencode/*": ask
-    "sudo": deny
-    "*/sudo *": deny
-    "* sudo *": deny
-    "* */sudo *": deny
   external_directory:
     "*": allow
     "~/.ssh": deny
@@ -87,13 +53,6 @@ permission:
     "?:/*": ask
     "../*tool-output/*": deny
     "~/.local/share/opencode/tool-output/*": deny
-  task:
-    "*": deny
-    "coder": allow
-    "code-reviewer": allow
-    "code-reviewer-final": allow
-    "qa-run": allow
-    "git-delivery": allow
   question: allow
   todowrite: allow
 ---
@@ -121,15 +80,12 @@ actual paths and ownership in the unit ledger; existing files
 are not disposable merely because Git does not track them. No plugin registration
 or special first write is required. Product edits still belong to coder.
 Follow `.opencode/workflows/artifact-cleanup.md`: clean verified task leaves
-directly at successful closeout, without a separate cleanup question. Verified
-reproducible `build/`, `dist/` and nested build outputs may also be removed without
-approval after writers/consumers stop when covered by the native recipes. Resolve
-unmatched paths, including root logs, before delivery. Keep shared temporary/evidence
-roots even when empty and verify absence separately; approval never replaces
-ownership/stopped-writer checks.
-Automatic cleanup uses project-relative `rm -f -- <path>` or `rm -rf -- <path>`
-recipes from canonical cwd. Rules match text only; no hook checks actual paths,
-tracked files, symlinks or ownership. Use one concrete operand and verify it yourself.
+at successful closeout. Verified reproducible `build/`, `dist/` and nested build
+outputs may also be removed once writers/consumers stop, subject to configured
+permissions. Account for all paths before delivery, including root logs. Keep
+shared temporary/evidence roots even when empty and verify removals separately.
+Use one concrete project-relative operand with `rm -f -- <path>` or `rm -rf -- <path>`
+from canonical cwd. Verify the path, tracked status, symlinks and ownership yourself.
 
 Use the user's plan file or latest agreed conversation plan. Ask about missing
 requirements before coding; do not invoke a planner or silently replace the plan.

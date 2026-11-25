@@ -73,7 +73,8 @@ Developer and Sprinter own the visible list in the parent session. When
 `todowrite` is available, call it before the first worker assignment on any
 multi-step task or phase, and whenever the list or its statuses change. Include
 the approved scope/baseline, implementation, development review, final review,
-required checks/QA, delivery and cleanup; omit stages outside the user's scope.
+required pre-delivery checks/QA, delivery, required post-delivery checks and
+cleanup; omit stages outside the user's scope.
 Review-only work lists only its requested review/check stages, never authorizes
 implementation or extra QA. A child session's TODO list does not update its parent.
 
@@ -116,30 +117,38 @@ paused or blocked work, authorize a new phase, or backfill old sessions.
    it only if unavailable or the user requests replacement, supplying its history
    to the replacement.
 2. Run the development review, then independent final review under the focused
-   workflow and its single unit-wide coding budget. For Developer, default to
-   development `correctness` then final `general`, adding specialists only for
-   concrete risks. Sprinter runs all five profiles in each discovery tier.
+    workflow and its single unit-wide coding budget. Resolve the eligible
+    profiles from `PROJECT.md` using that workflow. Developer uses development
+    `correctness` then final `general`, adding eligible specialists for concrete
+    risks. Sprinter runs the entire eligible set in each discovery tier.
    Launch selected focuses concurrently within each tier, not the tiers together.
    Collect all selected reports and consolidate accepted findings before correction.
-3. Run required final verification. Use commands from the applicable `AGENTS.md`
+3. Run required pre-delivery verification. Use commands from the applicable `AGENTS.md`
    and its referenced documentation for ordinary checks, and `qa-run` only for
    documented project scenarios/packs. QA never changes product
    code or pass criteria. Product defects return to coder and reviewer within the
-   same coding budget; unavailable prerequisites are blockers.
+   same coding budget; unavailable prerequisites are blockers. Record any required
+   checks that need the target revision under `Verification timing` in
+   `.opencode/workflows/git-delivery.md` as pending in the delivery handoff.
 4. Complete the [cleanup check before delivery](artifact-cleanup.md#cleanup-check-before-delivery),
-   including logs outside the automatic recipes. Once required cleanup is
+    including any logs at the project root. Once required cleanup is
    accounted for, seal a READY packet for the accepted checkpoint and invoke
    `git-delivery` in a fresh subagent session. Verify its actual model/agent
    identity and returned receipt against read-only Git queries. Never perform
    the transfer directly or run other unit work while it is active. A missing,
    blocked or partial delivery stops closeout without automatic retry or fallback.
-5. After a verified DELIVERED receipt and any revision-identity-dependent checks,
-   record a self-contained result summary and reconcile the cleanup inventory with
-   actual outputs and permissions. Remove outputs and standalone
-   logs first; keep the ledger, ownership record and delivery evidence until all
-   other removals are verified. Remove those service records last, verify cleanup,
-   then attempt the
-   optional code-intelligence refresh below. Sprinter closes each phase before
+   An accepted net no-op still requires verification that the scope is already
+   satisfied, both review tiers and required pre-delivery checks; hand it off for
+   `NO_CHANGES`.
+5. After verifying the `DELIVERED` or `NO_CHANGES` receipt, run the planned checks
+   on the target revision under `Parent closeout` in the delivery workflow. If a
+   required check fails or cannot run, report the Git outcome and blocker, preserve
+   evidence and stop. Once all required checks pass, record a self-contained result
+   summary and reconcile the cleanup inventory with actual outputs and permissions.
+   Remove outputs and standalone logs first; keep the ledger, ownership record and
+   delivery evidence until all other removals are verified. Remove those service
+   records last, verify cleanup, then attempt the optional code-intelligence
+   refresh below. Sprinter closes each phase before
    entering the next; Developer closes the whole task. No archive is required
    unless the user explicitly requests retention.
 
@@ -163,8 +172,8 @@ including `/tmp/opencode/`, requires approved native writes and a known cleanup
 owner, not approval merely to read the directory.
 Before deletion verify exact target, ownership, stopped writers and evidence
 lifetime under `artifact-cleanup.md`. Clean known task leaves or reproducible
-build outputs directly when covered by the parent's native recipes. Resolve
-unmatched targets under the pre-delivery cleanup check.
+build outputs at closeout, subject to configured permissions. Account for all
+targets under the pre-delivery cleanup check.
 If approval is pending or rejected, preserve the files and report the blocker;
 do not bypass it by changing cwd, tool or operand.
 Check required delivery validation tools before delegation; report unresolved
@@ -232,14 +241,15 @@ For Sprinter include the phase brief/hash, planning protocol/version/round,
 reserved attempts, reviewer sessions/reports, dispositions/correction mappings,
 readiness, planner session, approved inputs and any unresolved prerequisite as well.
 Restore this state on resume rather than creating a new unit.
-At successful closeout, keep only the delivered commit, verified outcomes,
-relevant limitations and cleanup summary for the next phase. Delete disposable
+At successful closeout, keep only the delivered commit or unchanged target SHA,
+verified outcomes, relevant limitations and cleanup summary for the next phase. Delete disposable
 ledger/reports under the cleanup workflow; do not depend on their old paths.
 
 Completion requires the whole selected scope, both review tiers, required checks,
 accepted target delivery and artifact cleanup; code-intelligence refresh is optional.
 Otherwise report pending work or `BLOCKED`, not completion. The final report
-includes the result/changed areas, commit mapping, review coverage, coding budget
+includes the result/changed areas, commit mapping (or unchanged target SHA and
+why no commit was needed), review coverage, coding budget
 used, test results, cleanup totals, explicitly retained paths and remaining limitations.
 If QA was used, include its complete result, tables, evidence, failures and notes,
 not a replacement summary; mark disposed output paths as removed by cleanup.

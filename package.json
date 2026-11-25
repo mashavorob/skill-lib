@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "python3 -m unittest discover -s tests && node --test tests/*.test.mjs",
-    "test:smoke": "node tests/sprinter-phase.smoke.mjs"
+    "test:smoke": "node tests/sprinter-phase.smoke.mjs && node tests/sprinter-phase.smoke.mjs --auto-overlap"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.15.11"

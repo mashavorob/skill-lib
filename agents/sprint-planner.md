@@ -3,23 +3,6 @@ description: "Prepare or revise one bounded implementation brief for a phase of 
 mode: subagent
 model: openai/planner
 permission:
-  bash:
-    "*": allow
-    "sudo *": deny
-    "rm *": ask
-    "rmdir *": ask
-    "unlink *": ask
-    "git *reset *": ask
-    "git *clean *": ask
-    "git *restore *": ask
-    "git *checkout *": ask
-    "git *rebase *": ask
-    "git *push *": ask
-    "git *commit *--amend*": ask
-    "sudo": deny
-    "*/sudo *": deny
-    "* sudo *": deny
-    "* */sudo *": deny
   external_directory:
     "*": allow
     "~/.ssh": deny

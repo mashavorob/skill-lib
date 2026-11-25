@@ -1,29 +1,10 @@
 const workers = new Set([
   "coder", "code-reviewer", "code-reviewer-final", "sprint-planner", "plan-reviewer", "qa-run", "git-delivery",
 ]);
-const harnessAgents = ["developer", "sprinter", ...workers];
-
-function restrictBuiltins(config) {
-  config.agent ??= {};
-  for (const name of ["build", "plan"]) {
-    const agent = config.agent[name] ??= {};
-    const permission = agent.permission ??= {};
-    permission.sprinter_phase = "deny";
-    const { task } = permission;
-    if (task === "deny") continue;
-    const rules = typeof task === "string" ? { "*": task } : { ...task };
-    for (const worker of harnessAgents) {
-      // OpenCode uses the last matching rule, including when a wildcard is configured.
-      delete rules[worker];
-      rules[worker] = "deny";
-    }
-    permission.task = rules;
-  }
-}
 
 export default async ({ client, directory }) => ({
-  config: async (config) => { restrictBuiltins(config); },
   "tool.execute.after": async ({ tool, sessionID, args }, output) => {
+    if (!output) return;
     if (tool === "bash") {
       const exit = output.metadata?.exit;
       output.output += `\n\nOpenCode shell exit code: ${Number.isInteger(exit) ? exit : "unavailable"}`;
@@ -37,7 +18,7 @@ export default async ({ client, directory }) => ({
       try {
         const { data: child } = await client.session.get(request);
         if (child?.parentID === sessionID) {
-          const { data } = await client.session.messages(request);
+          const { data } = await client.session.messages({ ...request, query: { directory, limit: 1 } });
           const last = data?.at(-1)?.info;
           if (last?.role === "assistant" && last.agent && last.providerID && last.modelID && !last.error) {
             identity = { status: "observed", agent: last.agent, model: `${last.providerID}/${last.modelID}`,

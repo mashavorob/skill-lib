@@ -108,10 +108,13 @@ mandatory. A real scope change still requires the owner's decision.
 ## Resume and evidence lifetime
 
 Carry the complete brief/hash, approved phase inputs, original target/ref and
-BASE, planner session and next action into implementation and compaction handoffs.
-Save protocol, brief_version, review_round, reserved attempt IDs/status, reviewer
-sessions/identities, frozen input hashes, original reports, dispositions, correction
-mappings and readiness status in the ledger and `sprinter_phase` handoff/note.
+BASE, planner session and next action into implementation handoffs. Save the
+protocol, brief_version, review_round, reserved attempt IDs/status, reviewer
+sessions/identities, frozen input hashes, original reports, dispositions,
+correction mappings and readiness status in the ledger, which holds the complete
+materials. Keep `sprinter_phase` handoff/note within its 4000-character limit:
+reference ledger/report paths and digests and carry the current status and next
+action instead of copying full briefs or original reports into the tool.
 Restore them on resume without resetting counters, repeating completed collections
 or requiring review of V3. Resume an incomplete collection only in its recorded
 sessions/snapshot; unavailable history/worker sessions are a blocker, not fresh

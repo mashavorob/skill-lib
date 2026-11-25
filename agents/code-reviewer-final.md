@@ -3,23 +3,6 @@ description: "Independent final-tier read-only review using the shared reviewer 
 mode: subagent
 model: openai/reviewer
 permission:
-  bash:
-    "*": allow
-    "sudo *": deny
-    "rm *": ask
-    "rmdir *": ask
-    "unlink *": ask
-    "git *reset *": ask
-    "git *clean *": ask
-    "git *restore *": ask
-    "git *checkout *": ask
-    "git *rebase *": ask
-    "git *push *": ask
-    "git *commit *--amend*": ask
-    "sudo": deny
-    "*/sudo *": deny
-    "* sudo *": deny
-    "* */sudo *": deny
   external_directory:
     "*": allow
     "~/.ssh": deny

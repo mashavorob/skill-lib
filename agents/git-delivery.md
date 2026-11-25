@@ -1,25 +1,8 @@
 ---
-description: "Deliver one accepted checkpoint through squash/cherry-pick and return a durable, verified Git receipt."
+description: "Deliver one accepted checkpoint or verify no-change closeout and return a durable Git receipt."
 mode: subagent
 model: opencode/worker
 permission:
-  bash:
-    "*": allow
-    "sudo *": deny
-    "rm *": ask
-    "rmdir *": ask
-    "unlink *": ask
-    "git *reset *": ask
-    "git *clean *": ask
-    "git *restore *": ask
-    "git *checkout *": ask
-    "git *rebase *": ask
-    "git *push *": ask
-    "git *commit *--amend*": ask
-    "sudo": deny
-    "*/sudo *": deny
-    "* sudo *": deny
-    "* */sudo *": deny
   external_directory:
     "*": allow
     "~/.ssh": deny
@@ -103,7 +86,9 @@ write `BLOCKED` with the last verified stage and pending action, and return it.
 Reconcile interrupted operations from the receipt and Git before resuming;
 never repeat a cherry-pick whose result is already present.
 
-Return `DELIVERED|BLOCKED`, unit/handoff identity, original target ref,
-BASE/FINAL/SQUASH/RESULT mapping, verified trees/parents/trailers, exact commands
-and exit codes, remaining Git state, evidence paths and the receipt path. Delivery
+Return `DELIVERED|NO_CHANGES|BLOCKED`, unit/handoff identity, original target ref,
+BASE/FINAL/SQUASH/RESULT mapping where applicable, verified trees/parents/trailers,
+exact commands and exit codes, remaining Git state, evidence paths and the receipt
+path. For `NO_CHANGES`, report the unchanged target SHA and matching BASE/FINAL
+trees; SQUASH/RESULT are absent. Delivery
 does not close the phase: the orchestrator owns cleanup and final reporting.

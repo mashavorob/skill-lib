@@ -9,6 +9,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 const agent = "sprinter";
+const autoOverlap = process.argv.includes("--auto-overlap");
 const root = await mkdtemp(path.join(tmpdir(), "compact-smoke-"));
 const project = path.join(root, "project");
 await mkdir(project);
@@ -17,6 +18,7 @@ const handoff = "Phase 0 approved. Recover the phase ledger before work.";
 const plan = "approved phase plan";
 const requests = [];
 let mainTurns = 0;
+let buildTurns = 0;
 let summaries = 0;
 let child;
 let stdout = "";
@@ -27,7 +29,7 @@ function stream(response, { text, action, task, command }) {
   const tool = command ? { name: "bash", arguments: JSON.stringify({ command, description: "Check shell exit code", workdir: project }) }
     : task ? { name: "task", arguments: JSON.stringify(task) }
     : action ? { name: "sprinter_phase", arguments: JSON.stringify(action === "enter" ?
-      { action, phase: "0", plan, handoff } : { action }) } : null;
+      { action, phase: " 0 ", plan: ` ${plan} `, handoff } : action === "clear" ? { action, phase: "0" } : { action }) } : null;
   const delta = tool
     ? { role: "assistant", tool_calls: [{ index: 0, id: `call_${action ?? command ?? "task"}`, type: "function", function: tool }] }
     : { role: "assistant", content: text };
@@ -36,6 +38,10 @@ function stream(response, { text, action, task, command }) {
     choices: [{ index: 0, delta: value, finish_reason }] });
   response.write(`data: ${JSON.stringify(chunk(delta))}\n\n`);
   response.write(`data: ${JSON.stringify(chunk({}, tool ? "tool_calls" : "stop"))}\n\n`);
+  if (autoOverlap && action === "enter") {
+    const usage = { prompt_tokens: 195000, completion_tokens: 1, total_tokens: 195001 };
+    response.write(`data: ${JSON.stringify({ ...chunk({}), choices: [], usage })}\n\n`);
+  }
   response.end("data: [DONE]\n\n");
 }
 
@@ -48,8 +54,13 @@ const server = createServer(async (request, response) => {
     const conversation = JSON.stringify(body.messages);
     if (/Generate a title for this conversation/.test(conversation)) {
       stream(response, { text: "Compaction smoke" });
+    } else if (/CODER_FIXTURE/.test(body.messages[0]?.content)) {
+      stream(response, { text: "Coder finished." });
     } else if (/WORKER_IDENTITY_FIXTURE/.test(body.messages[0]?.content)) {
       stream(response, { text: "Worker finished." });
+    } else if (conversation.includes("DELEGATION_FIXTURE")) {
+      if (buildTurns++ === 0) stream(response, { task: { subagent_type: "coder", description: "Run coder", prompt: "Return a fixture result." } });
+      else stream(response, { text: "DELEGATION VERIFIED" });
     } else if (!body.tools?.length) {
       summaries++;
       stream(response, { text: "Native compaction summary. Phase 0. Call sprinter_phase status, then finish." });
@@ -60,6 +71,7 @@ const server = createServer(async (request, response) => {
       else if (mainTurns === 3) stream(response, { task: { subagent_type: "sprint-planner", description: "Verify worker identity", prompt: "Return a short fixture result." } });
       else if (mainTurns === 4) stream(response, { command: "false" });
       else if (mainTurns === 5) stream(response, { command: "true" });
+      else if (mainTurns === 6) stream(response, { action: "clear" });
       else stream(response, { text: "NATIVE COMPACTION VERIFIED" });
     }
   } catch (error) {
@@ -71,6 +83,11 @@ const server = createServer(async (request, response) => {
 try {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
+  const projectConfig = path.join(project, "opencode.json");
+  await writeFile(projectConfig, JSON.stringify({
+    $schema: "https://opencode.ai/config.json",
+    agent: { coder: { permission: { bash: "deny" } } },
+  }));
   const installation = spawnSync("python3", [
     fileURLToPath(new URL("../install.py", import.meta.url)), "--target", project,
   ], { encoding: "utf8" });
@@ -85,8 +102,9 @@ try {
         variants: { fixture: {} } } } } },
     agent: { [agent]: { model: "compact-test/test-model", mode: "primary",
       prompt: "Test native compaction: enter the approved phase alone. After continuation call status, then exercise the planner and report NATIVE COMPACTION VERIFIED." },
-    "sprint-planner": { model: "compact-test/test-model", variant: "fixture", prompt: "WORKER_IDENTITY_FIXTURE" } },
-    compaction: { auto: false },
+    "sprint-planner": { model: "compact-test/test-model", variant: "fixture", prompt: "WORKER_IDENTITY_FIXTURE" },
+     coder: { model: "compact-test/test-model", prompt: "CODER_FIXTURE" } },
+    compaction: { auto: autoOverlap },
     share: "disabled", autoupdate: false, snapshot: false, lsp: false, formatter: false,
   };
   await mkdir(path.join(root, "home"));
@@ -94,8 +112,9 @@ try {
   await mkdir(userConfigDir, { recursive: true });
   await writeFile(path.join(userConfigDir, "opencode.json"), JSON.stringify({
     $schema: "https://opencode.ai/config.json",
-    permission: { bash: "deny" },
-    agent: { plan: { prompt: "User Plan prompt" }, build: { prompt: "User Build prompt", permission: { task: "ask" } } },
+    agent: { plan: { prompt: "User Plan prompt", permission: { task: "deny", bash: "deny" } },
+      build: { prompt: "User Build prompt",
+      permission: { task: { coder: "allow" }, bash: "deny" } } },
   }));
   const env = { ...process.env, PWD: project, HOME: path.join(root, "home"),
     XDG_CONFIG_HOME: path.join(root, "config"), XDG_DATA_HOME: path.join(root, "data"),
@@ -120,41 +139,63 @@ try {
   const configured = check("config").agent;
   for (const name of ["developer", "sprinter", "coder", "code-reviewer", "code-reviewer-final",
     "sprint-planner", "plan-reviewer", "qa-run", "git-delivery", "singular-smoke"]) assert.ok(configured[name], name);
-  assert.equal(configured.coder.model, "openai/coder");
-  assert.equal(configured.developer.permission.task.coder, "allow");
+  assert.equal(configured["code-reviewer-final"].model, "openai/reviewer");
+  for (const name of ["developer", "sprinter"]) assert.equal(configured[name].permission.task, undefined);
   assert.equal(configured["code-reviewer-final"].permission.edit, "deny");
+  const rule = (role, permission, pattern) => role.permission.findLast((entry) =>
+    [permission, "*"].includes(entry.permission) &&
+    (entry.pattern === pattern || entry.pattern === "*"))?.action;
+  assert.equal(rule(check("agent", "coder"), "bash", "*"), "deny");
+  await rm(projectConfig);
+  assert.equal(rule(check("agent", "coder"), "bash", "*"), "allow");
   for (const name of ["plan", "build"]) {
     const builtin = check("agent", name);
     assert.equal(builtin.prompt, `User ${name === "plan" ? "Plan" : "Build"} prompt`);
-    const rule = (permission, pattern, action) =>
-      assert.equal(builtin.permission.findLast((entry) => entry.permission === permission &&
-        (entry.pattern === pattern || entry.pattern === "*"))?.action, action);
-    rule("bash", "*", "deny");
-    rule("task", "git-delivery", "deny");
-    rule("sprinter_phase", "*", "deny");
-    if (name === "plan") rule("edit", ".opencode/plans/*.md", "allow");
-    else rule("task", "general", "ask");
+    assert.equal(rule(builtin, "bash", "*"), "deny");
+    if (name === "plan") {
+      assert.equal(rule(builtin, "edit", ".opencode/plans/*.md"), "allow");
+      assert.equal(rule(builtin, "task", "*"), "deny");
+    } else {
+      assert.equal(rule(builtin, "task", "coder"), "allow");
+    }
   }
   const skills = check("skill").map((skill) => skill.name);
   assert.ok(skills.includes("python-development") && skills.includes("python-memory"));
-  child = spawn("opencode", ["run", "--dir", project, "--format", "json", "--agent", agent, "Verify the saved phase checkpoint through native compaction."],
-    { cwd: project, env, stdio: ["ignore", "pipe", "pipe"] });
-  child.stdout.on("data", (chunk) => { stdout += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const timeout = setTimeout(() => child.kill("SIGKILL"), 60_000);
-  const code = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", resolve);
-  }).finally(() => clearTimeout(timeout));
-  assert.equal(code, 0, `OpenCode failed: ${stderr}\n${stdout}`);
-  const events = stdout.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+  const exportMessages = (sessionID) => {
+    const exported = spawnSync("opencode", ["export", sessionID], { cwd: project, env, encoding: "utf8", timeout: 30_000 });
+    assert.equal(exported.status, 0, `Session export failed: ${exported.error ?? ""}\n${exported.stderr}`);
+    return JSON.parse(exported.stdout).messages;
+  };
+  const run = async (role, ...args) => {
+    stdout = stderr = "";
+    child = spawn("opencode", ["run", "--dir", project, "--format", "json", "--agent", role, ...args],
+      { cwd: project, env, stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 60_000);
+    const code = await new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", resolve);
+    }).finally(() => clearTimeout(timeout));
+    assert.equal(code, 0, `OpenCode failed: ${stderr}\n${stdout}`);
+    return stdout.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+  };
+  const events = await run(agent, ...(!autoOverlap ? ["--variant", "fixture"] : []),
+    "Verify the saved phase checkpoint through native compaction.");
   const results = events.filter((event) => event.part?.type === "tool" && event.part.tool === "sprinter_phase" && event.part.state.status === "completed")
     .map((event) => JSON.parse(event.part.state.output));
-  assert.equal(results.length, 2, `Expected request/status receipts.\n${stdout}\n${stderr}`);
+  assert.equal(results.length, 3, `Expected enter, status and clear receipts.\n${stdout}\n${stderr}`);
   assert.equal(results[0].status, "queued");
   assert.equal(results[1].status, "ready");
+  assert.equal(results[1].phase, "0");
+  assert.equal(results[1].plan, plan);
+  assert.deepEqual(results[2], { status: "cleared", phase: "0" });
   assert.equal(results[0].nativeRequestID, results[1].nativeRequestID);
   assert.ok(results[1].summaryMessageID);
+  if (autoOverlap) {
+    assert.ok(results[1].summaryRequestID, "Expected a second native request in the enter turn.");
+    assert.notEqual(results[1].summaryRequestID, results[0].nativeRequestID);
+  } else assert.equal(results[1].summaryRequestID, undefined);
   assert.equal(summaries, 1, "Exactly one real native compaction should run.");
   assert.ok(requests.some(({ body }) => !body.tools?.length &&
     JSON.stringify(body.messages).includes("Preserve this Sprinter checkpoint")), "Summary receives recovery context");
@@ -165,9 +206,26 @@ try {
     assert.ok(modelInputs.some((input) => input.includes(`(no output)\\n\\nOpenCode shell exit code: ${code}`)),
       `Model did not receive shell exit code ${code}`);
   }
-  assert.equal(mainTurns, 6, "Request -> automatic continuation/status -> worker -> shell checks -> final answer.");
+  assert.equal(mainTurns, 7, "Request -> automatic continuation/status -> worker -> shell checks -> clear -> final answer.");
   assert.match(stdout, /NATIVE COMPACTION VERIFIED/);
-  console.log(JSON.stringify({ result: "PASS", agent, opencode: "native session.summarize", compactions: summaries,
+  if (!autoOverlap) {
+    const phaseEvents = events.filter(({ part }) => part?.tool === "sprinter_phase" && part.state.status === "completed");
+    const messages = exportMessages(phaseEvents[0].sessionID);
+    const assistantFor = ({ part }) => messages.find(({ info }) => info.id === part.messageID)?.info;
+    assert.equal(assistantFor(phaseEvents[0])?.variant, "fixture", "Enter runs with the selected Sprinter variant.");
+    for (const event of phaseEvents.slice(1)) {
+      const assistant = assistantFor(event);
+      assert.equal(assistant?.agent, agent);
+      // The 1.19.6 summarize payload cannot carry the variant into auto-continuation.
+      assert.equal(assistant.variant, undefined, "Native continuation uses the model alias defaults.");
+    }
+    const buildEvents = await run("build", "DELEGATION_FIXTURE");
+    const coderResult = buildEvents.find(({ part }) => part?.tool === "task" && part.state.status === "completed" &&
+      part.state.input.subagent_type === "coder")?.part.state.output;
+    assert.match(coderResult ?? "", /OpenCode worker identity \(session metadata\): {"status":"observed","agent":"coder"/);
+    assert.match(stdout, /DELEGATION VERIFIED/);
+  }
+  console.log(JSON.stringify({ result: "PASS", agent, autoOverlap, opencode: "native session.summarize", compactions: summaries,
     installedPlugin: true, manualNpmInstall: false,
     manualContinuation: false, request: results[0], completion: results[1] }, null, 2));
   await rm(root, { recursive: true });

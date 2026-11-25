@@ -60,9 +60,14 @@ evidence without executing tests or changing code. Role and review gates do not 
 
 ## Project documentation
 
-Project documentation describes the project's current state, not its development
-history. Keep development history in Git; it may also appear in the development
-plan. Never record development history in `AGENTS.md`.
+Project documentation must describe only the project's current state. This
+applies especially to root and nested `AGENTS.md` files: update or remove stale
+guidance in scope rather than appending a record of what changed. Never recount
+development history in `AGENTS.md`.
+
+Git is the source of truth for development history. Only the development plan
+and documents explicitly designated to record history (such as a changelog) may
+include it.
 
 ## C++ optional values
 
@@ -96,13 +101,17 @@ correctly, rather than propagating full diagnostics through the call chain.
 ## Mistake-prevention permissions
 
 Models are trusted to follow their assignment, but can choose mistaken paths or
-commands. Routine shell work has no command/flag allowlist. Native permissions
-deny `sudo`, allow external directories for task-relevant reading/search and
-inspection, and ask before direct native writes outside the active project and
-destructive Git commands. Deletion asks outside the parent task-cleanup exception
-in `artifact-cleanup.md`. Read-only roles retain the native edit denial;
-other roles may edit files without a scratch registration ceremony. Broad shell
-permission does not override read-only, delegation, scope or cleanup instructions.
+commands. Harness roles inherit Bash permissions from OpenCode and user/project
+configuration; there are no shipped command filters or cleanup grants. Native
+rules permit task-relevant external inspection and, for writable roles, ask before
+direct native edits matching external path patterns. Read-only roles retain the
+native edit denial; other roles may edit files without scratch registration.
+Broad shell permission does not override read-only, delegation, scope or cleanup instructions.
+
+In OpenCode 1.19.6, per-agent Bash rules take precedence over matching top-level
+rules. A top-level `permission.bash: "deny"` does not disable Bash for a harness
+role whose own rules allow it. Check effective per-agent permissions before
+relying on a Bash restriction.
 
 Directory inference by the shell scanner is **best effort**. Scripts, tools and
 programs may access paths not inferred from command text; these rules are **not a sandbox**.
@@ -150,11 +159,13 @@ unrelated captures. Keep task-generated logs in the assigned project-local captu
 directory. Never create or use capture symlinks/aliases to reach unrelated files;
 path rules are not shell/OS read-only isolation or symlink-target containment.
 
-`Allow once` approves one pending request. `Allow always` saves the tool's proposed
-patterns for the project: inspect them and do not save a blanket external-write
-grant. Saved approvals do not override a final configured denial. Non-interactive
-clients must decide or report a pending write/
-deletion request as blocked. Never bypass a required edit approval using shell.
+`Allow once` approves one pending request. In OpenCode 1.19.6, `Allow always`
+keeps the tool's proposed patterns in the running project instance. Inspect
+them and avoid blanket external-write grants. When OpenCode checks a request,
+a matching `Allow always` rule is evaluated after configured rules and can
+override a `deny` if the tool is still available. Use OS-level isolation for
+hard access limits. Non-interactive clients must decide or report a pending
+write/deletion request as blocked. Never bypass a required edit approval using shell.
 
 ## Paths and operations
 
@@ -180,14 +191,13 @@ files; never delete the project root or shared temporary roots.
 Follow `artifact-cleanup.md`, preserve recovery evidence until other cleanup is
 verified, and do not turn a rejected command into a script or larger operand.
 Known unit-owned `tmp`/artifact leaves and verified reproducible `build/`, `dist/`
-or nested build outputs covered by the native recipes need no separate cleanup
-question at successful closeout. Check unmatched paths before delivery.
+or nested build outputs need no separate workflow question at successful closeout.
+Honor configured tool permissions and account for all cleanup paths before delivery.
 Build roots may be removed in full after writers/consumers stop; names/ignored
 status alone do not prove safe contents. Use the standard project-relative
-`rm -f -- <path>` or `rm -rf -- <path>` recipes. There is no cleanup hook: native
-rules only match text and do not validate cwd, real paths, links, tracked files,
-traversal or multiple operands. The parent owns all target/ownership/writer/
-retention checks. Shared temporary/evidence roots stay in place, even when empty.
+`rm -f -- <path>` or `rm -rf -- <path>` recipes. There is no cleanup hook; the parent
+owns the path, ownership, writer and retention checks. Shared temporary/evidence
+roots stay in place, even when empty.
 Run deletion and read-only absence verification in separate calls, not
 `rm; echo; ls` chains.
 

@@ -92,7 +92,9 @@ branches, merge or cherry-pick, and does not fall back to direct delivery.
 Keep Git mutations exclusive to the current owner: no checkpoints or branch
 switches while the delivery worker is active. A blocked or interrupted delivery
 preserves its receipt, evidence and Git state for explicit same-unit recovery.
-Before cleanup or phase advance, verify the worker's receipt against actual
-target/ref, BASE/FINAL/SQUASH/RESULT, trees, parents and trailers through read-only
-Git queries. Preserve that mapping in the final result; cleanup removes the
-temporary packet and reports only after full successful closeout.
+Before cleanup or phase advance, verify the worker's receipt through read-only
+Git queries: for `DELIVERED`, check target/ref, BASE/FINAL/SQUASH/RESULT, trees,
+parents and trailers; for `NO_CHANGES`, verify the unchanged checkout and
+BASE/FINAL tree equality under the delivery workflow. Preserve that mapping in
+the final result; cleanup removes the temporary packet and reports only after
+full successful closeout.
