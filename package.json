@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "python3 -m unittest discover -s tests && node --test skills/py-development-loop/tests/sprinter-compaction.test.mjs",
-    "test:smoke": "node skills/py-development-loop/tests/sprinter-compaction.smoke.mjs py-sprinter && node skills/py-development-loop/tests/sprinter-compaction.smoke.mjs cpp-sprinter"
+    "test": "python3 -m unittest discover -s tests && node --test tests/*.test.mjs",
+    "test:smoke": "node tests/sprinter-phase.smoke.mjs"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.15.11"

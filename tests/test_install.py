@@ -1,6 +1,7 @@
 """Installation integration checks using isolated destination directories."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -15,47 +16,69 @@ class InstallationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="skill-lib-install-")
         self.addCleanup(self.temporary.cleanup)
-        self.target = Path(self.temporary.name) / "custom config"
+        self.project = Path(self.temporary.name).resolve() / "test project"
+        self.project.mkdir()
+        self.target = self.project / ".opencode"
+        self.global_config = self.project.parent / "global config"
+        self.global_config.mkdir()
+        self.env = {**os.environ, "OPENCODE_CONFIG_DIR": str(self.global_config),
+                    "XDG_CONFIG_HOME": str(self.global_config), "HOME": str(self.global_config)}
 
     def install(self, *arguments):
         return subprocess.run(
-            [sys.executable, str(ROOT / "install.py"), "--target", str(self.target), *arguments],
-            capture_output=True, text=True, check=False,
+            [sys.executable, str(ROOT / "install.py"), "--target", str(self.project), *arguments],
+            env=self.env, capture_output=True, text=True, check=False,
         )
 
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_both_workflows_install_unchanged_with_relative_imports(self):
+    def test_installs_only_project_assets_with_relative_imports(self):
+        manifest = self.project / "package.json"
+        manifest.write_text('{"name":"application"}\n')
+        guide = self.project / "AGENTS.md"
+        guide.write_text("Existing project instructions.\n")
         self.assert_success(self.install())
         expected = {
             path.relative_to(ROOT)
-            for folder in ("skills", "agents", "plugins")
+            for folder in ("skills", "agents", "plugins", "workflows", "lib")
             for path in (ROOT / folder).rglob("*")
             if path.is_file() and "__pycache__" not in path.parts
         }
         installed = {path.relative_to(self.target) for path in self.target.rglob("*") if path.is_file()}
-        self.assertEqual(installed, expected | {Path("package.json")})
+        self.assertEqual(installed, expected | {Path("package.json"), Path("PROJECT.md")})
+        self.assertFalse((self.target / "agent").exists())
+        self.assertEqual(list(self.global_config.iterdir()), [])
+        self.assertEqual(manifest.read_text(), '{"name":"application"}\n')
+        self.assertEqual(guide.read_text(), "Existing project instructions.\n")
+        self.assertIn(f"Canonical project root: `{self.project}`", (self.target / "PROJECT.md").read_text())
         for relative in expected:
             self.assertEqual((self.target / relative).read_bytes(), (ROOT / relative).read_bytes())
-        for prefix in ("py", "cpp"):
-            skill = self.target / f"skills/{prefix}-development-loop"
-            self.assertIn(f"name: {prefix}-development-loop", (skill / "SKILL.md").read_text())
+        for name in ("python-development", "python-memory"):
+            skill = self.target / f"skills/{name}/SKILL.md"
+            self.assertIn(f"name: {name}", skill.read_text())
         package = json.loads((self.target / "package.json").read_text())
         required = json.loads((ROOT / "package.json").read_text())["dependencies"]
         self.assertEqual(package["dependencies"], required)
         self.assertNotIn("scripts", package)
-        plugin = self.target / "plugins/py-sprinter-compact.js"
-        self.assertTrue((plugin.parent / "../skills/py-development-loop/lib/sprinter-compaction.mjs").is_file())
+        self.assertTrue((self.target / "plugins/sprinter-phase.js").is_file())
+        self.assertTrue((self.target / "lib/phase-compaction.mjs").is_file())
+
+    def test_target_is_required(self):
+        result = subprocess.run([sys.executable, str(ROOT / "install.py")],
+                                env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--target", result.stderr)
+        self.assertEqual(list(self.global_config.iterdir()), [])
 
     def test_relative_target_resolves_from_callers_directory(self):
         result = subprocess.run(
-            [sys.executable, str(ROOT / "install.py"), "--target", "custom config"],
+            [sys.executable, str(ROOT / "install.py"), "--target", self.project.name],
             cwd=self.temporary.name, capture_output=True, text=True, check=False,
         )
         self.assert_success(result)
-        self.assertTrue((self.target / "agents/py-developer.md").is_file())
-        self.assertTrue((self.target / "agents/cpp-developer.md").is_file())
+        self.assertTrue((self.target / "agents/developer.md").is_file())
+        self.assertTrue((self.target / "agents/sprinter.md").is_file())
         self.assertIn(str(self.target), result.stdout)
 
     def test_dry_run_creates_nothing(self):
@@ -69,11 +92,15 @@ class InstallationTests(unittest.TestCase):
         self.assertIn("Files to install: 0;", result.stdout)
         self.assertFalse((self.target / ".skill-lib-backups").exists())
 
-    def test_conflicts_stop_before_writing_and_force_backs_up_both_languages(self):
+    def test_conflicts_stop_before_writing_and_force_backs_up_without_resetting_profile(self):
         self.assert_success(self.install())
-        for prefix in ("py", "cpp"):
-            (self.target / f"agents/{prefix}-coder.md").write_text(f"local {prefix} edit\n")
-        plugin = self.target / "plugins/py-sprinter-compact.js"
+        profile = self.target / "PROJECT.md"
+        profile.write_text("Local profile\n")
+        custom = self.target / "agents/custom.md"
+        custom.write_text("Local agent\n")
+        coder = self.target / "agents/coder.md"
+        coder.write_text("Local coder\n")
+        plugin = self.target / "plugins/sprinter-phase.js"
         plugin.unlink()
         result = self.install()
         self.assertEqual(result.returncode, 1)
@@ -82,12 +109,25 @@ class InstallationTests(unittest.TestCase):
         self.assertFalse((self.target / ".skill-lib-backups").exists())
         self.assert_success(self.install("--force"))
         self.assertTrue(plugin.is_file())
-        for prefix in ("py", "cpp"):
-            saved = list((self.target / ".skill-lib-backups").glob(f"*/agents/{prefix}-coder.md"))
-            self.assertEqual(len(saved), 1)
-            self.assertEqual(saved[0].read_text(), f"local {prefix} edit\n")
-            installed = self.target / f"agents/{prefix}-coder.md"
-            self.assertEqual(installed.read_bytes(), (ROOT / f"agents/{prefix}-coder.md").read_bytes())
+        saved = list((self.target / ".skill-lib-backups").glob("*/agents/coder.md"))
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0].read_text(), "Local coder\n")
+        self.assertEqual(coder.read_bytes(), (ROOT / "agents/coder.md").read_bytes())
+        self.assertEqual(profile.read_text(), "Local profile\n")
+        self.assertEqual(custom.read_text(), "Local agent\n")
+
+    def test_singular_agent_collision_stops_even_with_force(self):
+        existing = self.target / "agent/coder.md"
+        existing.parent.mkdir(parents=True)
+        existing.write_text("Existing agent\n")
+        self.assertNotEqual(self.install("--force").returncode, 0)
+        self.assertEqual(existing.read_text(), "Existing agent\n")
+        self.assertFalse((self.target / "agents").exists())
+
+    def test_symlinked_opencode_directory_is_not_followed(self):
+        self.target.symlink_to(self.global_config, target_is_directory=True)
+        self.assertNotEqual(self.install("--force").returncode, 0)
+        self.assertEqual(list(self.global_config.iterdir()), [])
 
     def test_missing_dependency_merges_with_backup_and_preserves_unrelated_fields(self):
         self.target.mkdir()
@@ -133,7 +173,7 @@ class InstallationTests(unittest.TestCase):
         manifest = self.target / "package.json"
         manifest.write_text('{"dependencies": {"another-plugin": "1.0.0"}}\n')
         before = manifest.read_bytes()
-        (self.target / "agents/py-coder.md").write_text("local edit\n")
+        (self.target / "agents/coder.md").write_text("local edit\n")
         self.assertEqual(self.install().returncode, 1)
         self.assertEqual(manifest.read_bytes(), before)
         self.assertFalse((self.target / ".skill-lib-backups").exists())

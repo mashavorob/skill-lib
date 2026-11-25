@@ -1,177 +1,119 @@
 # OpenCode Skill Library
 
-A portable collection of skills and related components exported from `~/.config/opencode/`.
-All library documentation, instructions and examples are written in English.
+A project-local port of the `l3.ai` development harness for OpenCode **1.x**,
+verified with **1.19.6**. It includes shared agents for Python, C++ and mixed
+projects, plus two on-demand Python skills.
 
-## Contents
+## Install
 
-| Path | Purpose |
+Requires Python 3.9+ and OpenCode. From this repository:
+
+```sh
+python3 install.py --target ~/src/myproject --dry-run
+python3 install.py --target ~/src/myproject
+```
+
+`--target` is required and points to an existing project root, not to its
+`.opencode/` directory. Installation writes only inside `<project>/.opencode/`:
+
+| Path | Contents |
 | --- | --- |
-| `skills/py-development-loop/` | Python development, review, QA, journaling and commit integration; includes references, the compaction controller and tests |
-| `agents/py-developer.md` | Primary agent for a single Python task |
-| `agents/py-sprinter.md` | Primary agent for a multi-phase Python task |
-| `agents/py-{coder,reviewer,qa,sprint-planner}.md` | Python workflow subagents |
-| `plugins/py-sprinter-compact.js` | Shared native compaction tool for `py-sprinter` and `cpp-sprinter` |
-| `skills/cpp-development-loop/` | C++ guidelines, nine review profiles and references to the shared development/Git protocol |
-| `agents/cpp-developer.md` | Primary agent for a single C++ task |
-| `agents/cpp-sprinter.md` | Primary agent for a multi-phase C++ task |
-| `agents/cpp-{coder,reviewer,qa,sprint-planner}.md` | C++ workflow subagents |
+| `agents/` | Developer, Sprinter and seven subagents |
+| `skills/` | `python-development` and `python-memory` |
+| `workflows/` | Planning, review, verification, Git delivery, cleanup and recovery instructions |
+| `plugins/`, `lib/` | OpenCode 1.x phase compaction, shell status and worker identity reporting |
+| `PROJECT.md` | Canonical root, Git conventions, cleanup defaults and optional project notes |
+| `package.json` | Local plugin dependency, merged with any existing `.opencode/package.json` |
 
-Both skills, all agents and the shared plugin are installed together because they reference one another.
-Models are inherited from OpenCode settings. The global `opencode.jsonc`, provider
-settings and `node_modules` are not part of the exported configuration.
+OpenCode 1.19.6 discovers both `.opencode/agent/` and `.opencode/agents/`.
+The installer uses **`agents/`** and refuses a same-name file in `agent/` to
+avoid duplicate IDs. The project's `AGENTS.md` remains the source of build,
+verification and QA instructions. The installer does not touch user-level config,
+the project's `opencode.json(c)`, or its root `package.json`.
 
-### Naming conventions
+**Fully quit and restart OpenCode from the target project root**, then select
+`developer` for one approved task or `sprinter` for a phase-based plan. OpenCode
+discovers the local plugins and installs their dependencies on startup; it may
+need registry access on first use. For diagnostics:
 
-Python skills and agents use `py-`; C++ skills and agents use `cpp-`. Language
-guidelines are named `py-guidelines.md` and `cpp-guidelines.md`. Supporting files
-inside namespaced skill directories retain descriptive names such as `workflow.md`.
-
-The Git/journal protocol and native compaction controller are shared from
-`skills/py-development-loop/` rather than duplicated. The C++ skill links to that
-protocol and supplies its own agent mapping, toolchain rules and focus roster.
-The existing `plugins/py-sprinter-compact.js` entry point keeps its filename for
-installation compatibility and registers `sprinter_compact` once for both
-`py-sprinter` and `cpp-sprinter`. No second C++ compaction plugin is needed.
-
-The installer is shared library infrastructure: its name stays `install.py` even
-though it is implemented in Python. Python and C++ agents coexist in one installation.
-
-### C++ review profiles
-
-The C++ workflow preserves the imported profiles: `correctness`, `duplication`,
-`data-duplication`, `simplification`, `cpp20`, `reuse`, `architecture`,
-`latency-concurrency` and `general`. Their canonical definitions and applicability
-rules live in [cpp-guidelines.md](skills/cpp-development-loop/references/cpp-guidelines.md).
-The imported source directory has been folded into these references.
-
-Both languages use the same owned-worktree, durable-journal, 32-round protocol:
-applicable focused reviews, an independent general review, QA, one squash commit
-per task/phase and local cherry-pick. Models are inherited. C++20 is an optional
-review profile subject to the project's actual toolchain, not a required standard.
-
-### Agent permissions
-
-All twelve agents use the same permissive tool policy: `"*": allow`,
-`external_directory: allow`, and Bash allowed except explicit `sudo` command patterns.
-File access has no path allowlist, so absolute paths, relative paths, home-directory
-paths, external worktrees, dependency sources and custom config directories do not
-need separate permission entries. Installed agents are copied without path rewriting.
-
-The Bash deny rules follow the catch-all allow rule because OpenCode uses the last
-matching rule. They cover `sudo`, `sudo <args>`, absolute/relative executable paths
-such as `/usr/bin/sudo` and `./sudo`, and prefixed forms such as `env sudo <args>`.
-Ordinary commands such as `/usr/bin/git`, `git -C ../repo ...`, `cmake`, `ctest`,
-searches and diagnostic commands are allowed without command allowlists.
-
-Role boundaries remain instructions: Reviewer and Planner do not modify code,
-QA does not repair it, and orchestrators delegate implementation. The no-push,
-history-preservation and review/QA gates also remain workflow requirements rather
-than tool-level denies. Never invoke `sudo` indirectly through scripts, wrappers,
-shells or other tools. Command patterns are not an OS-level privilege sandbox.
-Project/global settings and host policies can impose additional restrictions.
-
-## Install on another machine
-
-Requirements: Python 3.9+ to run the installer, and OpenCode to use the library.
-Separate Node.js/npm or Bun installations are not required for normal use.
-The installation and compaction checks have been verified with OpenCode 1.19.5.
-
-Clone this repository, open its directory and run:
-
-```bash
-python3 install.py --dry-run
-python3 install.py
+```sh
+opencode debug agent developer
+opencode debug agent sprinter
+opencode debug skill
 ```
 
-The installer copies both skills, all agents and the plugin, then adds missing runtime
-dependencies to `<target>/package.json`. It preserves unrelated fields/dependencies
-and any existing `@opencode-ai/plugin` version. Adding a dependency to an existing
-manifest creates a backup automatically; no `--force` is needed for this additive merge.
-An invalid manifest stops installation before any files are written.
+### Model aliases
 
-On the next startup, OpenCode installs local plugin dependencies automatically using
-its Bun runtime, as described in the [plugin documentation](https://opencode.ai/docs/plugins/#dependencies).
-The first startup may need registry access unless the required packages are cached.
-No manual `npm install` is needed, and the installer itself does not download packages.
-The local plugin is auto-discovered from `plugins/`; do not also add it to the
-`plugin` array in `opencode.json`/`opencode.jsonc`.
+The agents use these aliases from your OpenCode configuration. The harness sets
+no variant; configure reasoning on the aliases themselves.
 
-The repository pins `@opencode-ai/plugin@1.15.11` for development and uses it as the
-initial manifest entry when missing. OpenCode may manage/update its own plugin SDK
-version at startup; the installer does not downgrade an existing entry. The library's
-`package-lock.json` is for repository checks and is not copied into your config directory.
+| Agents | Model alias |
+| --- | --- |
+| `developer`, `sprinter`, `plan-reviewer`, `qa-run`, `git-delivery` | `opencode/worker` |
+| `code-reviewer` | `opencode/reviewer` |
+| `code-reviewer-final` | `openai/reviewer` |
+| `coder` | `openai/coder` |
+| `sprint-planner` | `openai/planner` |
 
-The installer uses `OPENCODE_CONFIG_DIR` when set; otherwise it defaults to
-`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`. To use a different directory:
+Plan and Build keep their prompts and existing shell permissions. The runtime
+plugin prevents them from invoking harness roles or the phase checkpoint tool.
 
-```bash
-python3 install.py --target /path/to/opencode --dry-run
-python3 install.py --target /path/to/opencode
-OPENCODE_CONFIG_DIR=/path/to/opencode opencode
+### Updating
+
+An identical installation is a no-op. Differing shipped files stop installation
+before any writes. To preview and apply replacements:
+
+```sh
+python3 install.py --target ~/src/myproject --dry-run --force
+python3 install.py --target ~/src/myproject --force
 ```
 
-Configure OpenCode to use the same custom directory, for example with
-`OPENCODE_CONFIG_DIR=/path/to/opencode`. Agent permissions are path-independent,
-and the plugin's relative import remains valid.
+Replacements are backed up under `.opencode/.skill-lib-backups/`. Existing
+`PROJECT.md`, unrelated files and existing plugin dependency versions are kept.
+The installer never prunes old components. If this target project contains a
+previous `py-*`/`cpp-*` installation, remove only its obsolete files and plugin
+after confirming ownership. Restart OpenCode after updating.
 
-Repeated installation skips identical files and an already-satisfied dependency
-manifest without reformatting it. If existing library-owned files differ, installation
-stops before writing anything. To preview and apply an update with backups:
+If you installed an earlier development snapshot of this port, remove its shipped
+`agents/plan.md`, `agents/build.md` and `plugins/worker-identity.js` from the
+project's `.opencode/`. The runtime plugin replaces those files.
 
-```bash
-python3 install.py --dry-run --force
-python3 install.py --force
-```
+## Workflow
 
-Previous versions of replaced library files and any updated `package.json` are saved under
-`<target>/.skill-lib-backups/<UTC timestamp>/`, preserving their directory structure.
-`--dry-run --force` previews replacements without writing files or creating backups.
-Installation copies files, so the repository can be moved afterward.
-Existing symlinks within destination file paths are rejected rather than followed.
+Developer starts with development correctness and independent final general
+review, adding specialist focuses when the change warrants them. Sprinter runs
+the five focuses in each code-review tier and uses a bounded phase-brief review
+before coding: at most two review rounds and three brief versions. Both share a
+32-attempt coding budget per task or phase, run project-defined checks, and hand
+accepted changes to `git-delivery` for local delivery. That workflow uses Git
+and needs a JSON validator (`jq` is recommended).
 
-**Fully quit and restart OpenCode after installation or updates.** Select
-`py-developer`, `py-sprinter`, `cpp-developer` or `cpp-sprinter` with Tab.
-For examples and task recovery, see the [Python usage guide](skills/py-development-loop/references/usage.md)
-or [C++ usage guide](skills/cpp-development-loop/references/usage.md).
+Prefer putting verification logs in `tmp/<unit>/<attempt>/`. Check logs outside
+the [automatic cleanup paths](workflows/artifact-cleanup.md) before transferring
+the commit; a task-owned log at the project root still requires shell permission.
 
-### Updating an earlier unprefixed installation
+The [shared rules](workflows/agent-rules.md) select Python skills by the affected
+component and memory risks. C++ guidance lives in those rules and the shared
+review profiles. Native permissions help enforce delegation and read-only edit
+roles; command-pattern checks are not an OS sandbox.
 
-The installer adds the new prefixed components; it does not remove older components.
-If you previously installed this library, back up and remove its old
-`skills/development-loop/`, `agents/{developer,sprinter,coder,reviewer,qa,sprint-planner}.md`
-and `plugins/sprinter-compact.js` from the destination configuration before restarting
-OpenCode. Remove only files belonging to that earlier installation. In particular,
-the old plugin and the new plugin must not both register `sprinter_compact`.
-Remove any explicit config references to the old plugin as well. If the library
-is already installed globally, avoid loading another copy of its plugin from a
-project or additional config directory in the same OpenCode session.
+Sprinter uses the [native phase checkpoint](workflows/sprinter-compaction.md).
+OpenCode automatically continues after compaction; Sprinter checks the native
+receipt before work. The phase ledger remains authoritative. The 1.x gate is a
+workflow rule, not a hard block on other tools. The runtime plugin adds the
+native exit code to Bash results and the child agent's model and variant to `task`
+results.
 
 ## Checks
 
-For library development only, install Python 3.9+ and Node.js 22+ with npm.
-From the cloned library root (not the installed configuration directory):
-
-```bash
-npm ci
+```sh
 npm test
 npm run test:smoke
 ```
 
-Tests cover installation of both languages, absolute/relative destination paths, idempotence,
-manifest merging/preservation, conflicts/backups and the shared compaction controller.
-The repository's `node_modules/` is only a local development dependency tree and is
-ignored by Git; it is separate from OpenCode's installed plugin dependencies.
-
-Smoke tests also require `opencode` on `PATH`. They run the installer into clean,
-isolated config directories, let OpenCode install/discover the plugin, and exercise
-both `py-sprinter` and `cpp-sprinter` with a local mock LLM. They verify native
-compaction and automatic continuation without calling an external model. Dependency
-downloads may still require network access. Failed smoke runs retain their temporary
-directory and print its path for diagnosis.
-
-## Updating the library
-
-Edit files in `skills/`, `agents/` and `plugins/`, run the checks and install again.
-Add new skills as `skills/<skill-name>/SKILL.md` together with their resources;
-the installer discovers them automatically. Save changes with a regular Git commit.
+The focused checks cover project-local installation, conflicts, and checkpoint
+recovery. The smoke check requires OpenCode, Git and Node 22+. It starts OpenCode
+in a disposable project with an isolated HOME and a local scripted model, and
+checks discovery, preservation of built-in configuration, native compaction,
+visible Bash status and worker identity. The upstream evaluation framework is
+not part of this repository.

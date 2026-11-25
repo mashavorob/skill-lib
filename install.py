@@ -1,16 +1,56 @@
 #!/usr/bin/env python3
-"""Copy the library to an OpenCode configuration directory (Python 3.9+)."""
+"""Install the OpenCode 1.x harness into a project's .opencode directory (Python 3.9+)."""
 
 import argparse
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 import shutil
+from string import Template
 import sys
 
 
 ROOT = Path(__file__).resolve().parent
+ASSET_DIRS = ("agents", "skills", "workflows", "plugins", "lib")
+PROJECT_PROFILE = Template("""\
+# Harness project profile
+
+## Harness location
+
+- Canonical project root: `$project`
+- Harness location: `$harness`
+- Project instructions: the canonical root's `AGENTS.md` and applicable nested guides.
+- Working area: the entire canonical project, including new files and directories.
+- Run project commands, Git operations and cleanup from the canonical root.
+- Project paths below are relative to that root.
+
+## Git
+
+- Iteration branch: `agent/iterations/<unit-id>`
+- Squash branch: `agent/squash/<unit-id>`
+- Commit prefix: `agent:`
+
+## Cleanup
+
+- Disposable roots: `build`, `dist`, `out`, `target`, `log`, `var`, `tmp`, `artifacts`, `*/artifacts`
+- Evidence roots: `artifacts/evidence`
+- Log patterns: `*.log`, `*.log.*`, `*.stdout`, `*.stderr`
+- Retain: none
+
+## Compaction
+
+- Use native automatic compaction and the `sprinter_phase` tool at phase boundaries.
+- Keep the project ledger authoritative; session history holds the compaction receipt.
+
+## Review
+
+- Enabled profiles: correctness, general, architecture, latency-concurrency, simplification
+- Disabled profiles: none
+
+## Notes and exclusions
+
+None.
+""")
 
 
 def validate_destination(destination, parser):
@@ -26,28 +66,32 @@ def validate_destination(destination, parser):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    default = Path(os.environ.get("OPENCODE_CONFIG_DIR") or
-                   Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "opencode")
-    parser.add_argument("--target", type=Path, default=default,
-                        help="OpenCode config directory (default: OPENCODE_CONFIG_DIR or XDG config)")
+    parser.add_argument("--target", type=Path, required=True, help="Existing project root")
     parser.add_argument("--dry-run", action="store_true", help="Show changes without writing")
     parser.add_argument("--force", action="store_true", help="Back up and replace conflicting files")
     args = parser.parse_args()
-    target = args.target.expanduser().resolve()
-    if target == ROOT or ROOT in target.parents or target in ROOT.parents:
+    project = args.target.expanduser().resolve()
+    if not project.is_dir():
+        parser.error(f"Not an existing project directory: {project}")
+    if project == ROOT or ROOT in project.parents or project in ROOT.parents:
         parser.error("Target must be separate from this library")
+    target = project / ".opencode"
 
     changes = []
     conflicts = []
     backups = []
     unchanged = 0
-    for directory in ("skills", "agents", "plugins"):
+    for directory in ASSET_DIRS:
         for source in sorted((ROOT / directory).rglob("*")):
-            if not source.is_file() or "__pycache__" in source.parts:
+            if not source.is_file() or {"__pycache__", "node_modules", ".DS_Store"}.intersection(source.parts):
                 continue
             relative = source.relative_to(ROOT)
             destination = target / relative
             validate_destination(destination, parser)
+            if directory == "agents":
+                alternate = target / "agent" / relative.relative_to("agents")
+                if alternate.exists() or alternate.is_symlink():
+                    parser.error(f"Agent ID already provided by {alternate}; resolve the duplicate before installing")
             data = source.read_bytes()
             if destination.exists():
                 if destination.read_bytes() == data:
@@ -56,6 +100,14 @@ def main():
                 conflicts.append(destination)
                 backups.append(destination)
             changes.append((source, destination, data))
+
+    profile = target / "PROJECT.md"
+    validate_destination(profile, parser)
+    if not profile.exists():
+        data = PROJECT_PROFILE.substitute(project=project, harness=target).encode("utf-8")
+        changes.append((None, profile, data))
+    else:
+        unchanged += 1
 
     # Merge only missing runtime dependencies; never replace the user's manifest.
     manifest = target / "package.json"
@@ -95,6 +147,8 @@ def main():
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         backup = target / ".skill-lib-backups" / stamp
         for destination in backups:
+            validate_destination(backup / destination.relative_to(target), parser)
+        for destination in backups:
             saved = backup / destination.relative_to(target)
             saved.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(destination, saved)
@@ -104,7 +158,7 @@ def main():
         destination.write_bytes(data)
         if source is not None:
             shutil.copymode(source, destination)
-    print(f"Installed to {target}. Restart OpenCode to install plugin dependencies and load the library.")
+    print(f"Installed to {target}. Start or restart OpenCode from {project}.")
     return 0
 
 
